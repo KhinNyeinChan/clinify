@@ -11,6 +11,7 @@ import {
   ScreenScroll,
 } from '@/components/clinic-ui';
 import { createSupplier, getSupplier, updateSupplier } from '@/services/suppliers';
+import { useI18n } from '@/constants/i18n';
 
 type SupplierErrors = {
   name?: string;
@@ -18,29 +19,34 @@ type SupplierErrors = {
   address?: string;
 };
 
-function validateSupplier(values: { name: string; phone: string; address: string }): SupplierErrors {
+function validateSupplier(
+  values: { name: string; phone: string; address: string },
+  copy: ReturnType<typeof useI18n>['supplierForm'],
+): SupplierErrors {
   const errors: SupplierErrors = {};
   const phone = values.phone.trim();
   const digitCount = phone.replace(/\D/g, '').length;
 
   if (!values.name.trim()) {
-    errors.name = 'Enter the supplier name.';
+    errors.name = copy.nameError;
   }
 
   if (!phone) {
-    errors.phone = 'Enter a phone number.';
+    errors.phone = copy.phoneError;
   } else if (digitCount < 7 || digitCount > 15) {
-    errors.phone = 'Enter a valid phone number.';
+    errors.phone = copy.phoneInvalid;
   }
 
   if (!values.address.trim()) {
-    errors.address = 'Enter an address.';
+    errors.address = copy.addressError;
   }
 
   return errors;
 }
 
 export function SupplierAddScreen() {
+  const copy = useI18n().supplierForm;
+  const common = useI18n().common;
   const { id } = useLocalSearchParams<{ id?: string | string[] }>();
   const recordId = firstSearchParam(id);
   const isEditing = Boolean(recordId);
@@ -71,7 +77,7 @@ export function SupplierAddScreen() {
       })
       .catch((error) => {
         if (active) {
-          setFormError(error instanceof Error ? error.message : 'Could not load the supplier.');
+          setFormError(error instanceof Error ? error.message : copy.loadError);
         }
       })
       .finally(() => {
@@ -91,7 +97,7 @@ export function SupplierAddScreen() {
   }
 
   async function saveSupplier() {
-    const nextErrors = validateSupplier({ name, phone, address });
+    const nextErrors = validateSupplier({ name, phone, address }, copy);
     setFieldErrors(nextErrors);
     setFormError(null);
 
@@ -118,8 +124,8 @@ export function SupplierAddScreen() {
         error instanceof Error
           ? error.message
           : isEditing
-            ? 'Could not update the supplier.'
-            : 'Could not add the supplier.',
+            ? copy.updateError
+            : copy.createError,
       );
     } finally {
       setSaving(false);
@@ -128,41 +134,44 @@ export function SupplierAddScreen() {
 
   return (
     <ScreenScroll withTabBar={false}>
-      <ScreenNavHeader title={isEditing ? 'Edit supplier' : 'Add supplier'} onBack={() => router.back()} />
+      <ScreenNavHeader title={isEditing ? copy.edit : copy.add} onBack={() => router.back()} />
       {loadingRecord ? (
         <LoadingMark />
       ) : (
         <>
           <Field
-            label="Name"
+            label={common.name}
+            required
             value={name}
             error={fieldErrors.name}
             editable={!saving}
-            placeholder="Supplier name"
+            placeholder={copy.namePlaceholder}
             onChangeText={(value) => {
               setName(value);
               clearFieldError('name');
             }}
           />
           <Field
-            label="Phone"
+            label={common.phone}
+            required
             value={phone}
             error={fieldErrors.phone}
             editable={!saving}
             keyboardType="phone-pad"
-            placeholder="Phone number"
+            placeholder={copy.phonePlaceholder}
             onChangeText={(value) => {
               setPhone(value);
               clearFieldError('phone');
             }}
           />
           <Field
-            label="Address"
+            label={common.address}
+            required
             value={address}
             error={fieldErrors.address}
             editable={!saving}
             multiline
-            placeholder="Address"
+            placeholder={copy.addressPlaceholder}
             onChangeText={(value) => {
               setAddress(value);
               clearFieldError('address');
@@ -170,7 +179,7 @@ export function SupplierAddScreen() {
           />
           {formError ? <ErrorBanner message={formError} /> : null}
           <PrimaryButton
-            label={isEditing ? 'Save supplier' : 'Add supplier'}
+            label={isEditing ? common.save : copy.add}
             loading={saving}
             onPress={() => {
               void saveSupplier();

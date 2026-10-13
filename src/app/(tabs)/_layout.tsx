@@ -5,6 +5,7 @@ import { type ColorValue, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Palette } from '@/constants/theme';
+import { useI18n } from '@/constants/i18n';
 
 const ACTIVE_TAB_COLOR = Palette.primary;
 const INACTIVE_TAB_COLOR = '#9CA3AF';
@@ -30,6 +31,7 @@ function TabIcon({
 export default function TabsLayout() {
   const insets = useSafeAreaInsets();
   const bottomOffset = Math.max(insets.bottom, 10);
+  const tabs = useI18n().tabs;
 
   return (
     <Tabs
@@ -47,7 +49,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Home',
+          title: tabs.home,
           tabBarIcon: ({ focused, color, size }) => (
             <TabIcon
               focused={focused}
@@ -62,7 +64,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="clinic"
         options={{
-          title: 'Clinic',
+          title: tabs.clinic,
           tabBarIcon: ({ focused, color, size }) => (
             <TabIcon
               focused={focused}
@@ -77,7 +79,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="visits"
         options={{
-          title: 'Visits',
+          title: tabs.visits,
           tabBarIcon: ({ focused, color, size }) => (
             <TabIcon
               focused={focused}
@@ -92,7 +94,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="inventory"
         options={{
-          title: 'Inventory',
+          title: tabs.inventory,
           tabBarIcon: ({ focused, color, size }) => (
             <TabIcon
               focused={focused}
@@ -107,7 +109,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="report"
         options={{
-          title: 'Report',
+          title: tabs.report,
           tabBarIcon: ({ focused, color, size }) => (
             <TabIcon
               focused={focused}

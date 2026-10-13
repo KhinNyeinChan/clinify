@@ -6,6 +6,7 @@ import { useColorScheme } from 'react-native';
 import type { Session } from '@supabase/supabase-js';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
+import { LanguageProvider } from '@/hooks/use-language';
 import { supabase } from '@/services/supabase';
 
 SplashScreen.preventAutoHideAsync();
@@ -35,6 +36,7 @@ export default function RootLayout() {
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+      <LanguageProvider>
       <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
       <AnimatedSplashOverlay />
       {session === undefined ? null : (
@@ -47,11 +49,14 @@ export default function RootLayout() {
             <Stack.Screen name="supplier/new" />
             <Stack.Screen name="medicine/new" />
             <Stack.Screen name="patient/new" />
+            <Stack.Screen name="patient/visits" />
             <Stack.Screen name="appointment/new" />
             <Stack.Screen name="transaction/new" />
+            <Stack.Screen name="purchase/new" />
           </Stack.Protected>
         </Stack>
       )}
+      </LanguageProvider>
     </ThemeProvider>
   );
 }

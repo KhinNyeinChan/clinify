@@ -24,6 +24,27 @@ alter table if exists public.transactions
 create index if not exists transactions_category_id_idx
   on public.transactions (category_id);
 
+-- Optional supplier on expenses; matches the type of suppliers.id (uuid or bigint).
+do $$
+declare
+  supplier_id_type text;
+begin
+  select format_type(a.atttypid, a.atttypmod)
+    into supplier_id_type
+  from pg_attribute a
+  where a.attrelid = 'public.suppliers'::regclass
+    and a.attname = 'id'
+    and not a.attisdropped;
+
+  execute format(
+    'alter table public.transactions add column if not exists supplier_id %s references public.suppliers(id) on delete set null',
+    supplier_id_type
+  );
+end $$;
+
+create index if not exists transactions_supplier_id_idx
+  on public.transactions (supplier_id);
+
 insert into public.expense_categories (name)
 values
   ('Medical Supplies'),

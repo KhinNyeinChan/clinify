@@ -4,10 +4,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import {
+  AmountField,
   Card,
   ComboField,
   ErrorBanner,
   Field,
+  FieldLabel,
   IconButton,
   PrimaryButton,
   ScreenHeader,
@@ -17,6 +19,7 @@ import {
   SuccessBanner,
 } from '@/components/clinic-ui';
 import { Palette, Radius, Spacing } from '@/constants/theme';
+import { useI18n } from '@/constants/i18n';
 import { useTheme } from '@/hooks/use-theme';
 import { createMedicalRecord } from '@/services/medical-records';
 import { listMedicines, type Medicine } from '@/services/medicines';
@@ -107,41 +110,44 @@ function suggestedMedicineTotal(prescriptions: Prescription[], medicines: Medici
   }, 0);
 }
 
-function validateVisit(values: {
-  patientId: string | null;
-  symptoms: string;
-  bloodPressure: string;
-  temperature: string;
-  diagnosis: string;
-  prescriptions: Prescription[];
-  consultationFee: string;
-  medicineFee: string;
-}): VisitErrors {
+function validateVisit(
+  values: {
+    patientId: string | null;
+    symptoms: string;
+    bloodPressure: string;
+    temperature: string;
+    diagnosis: string;
+    prescriptions: Prescription[];
+    consultationFee: string;
+    medicineFee: string;
+  },
+  copy: ReturnType<typeof useI18n>['visit'],
+): VisitErrors {
   const errors: VisitErrors = {};
   const temperature = Number(values.temperature);
 
   if (!values.patientId) {
-    errors.patient = 'Select a patient.';
+    errors.patient = copy.selectPatient;
   }
 
   if (!values.symptoms.trim()) {
-    errors.symptoms = 'Enter the symptoms.';
+    errors.symptoms = copy.symptomsError;
   }
 
   if (!values.bloodPressure.trim()) {
-    errors.bloodPressure = 'Enter the blood pressure.';
+    errors.bloodPressure = copy.bpError;
   } else if (!BLOOD_PRESSURE_PATTERN.test(values.bloodPressure.trim())) {
-    errors.bloodPressure = 'Use a reading such as 120/80.';
+    errors.bloodPressure = copy.bpFormat;
   }
 
   if (!values.temperature.trim()) {
-    errors.temperature = 'Enter the temperature.';
+    errors.temperature = copy.tempError;
   } else if (!Number.isFinite(temperature) || temperature < 30 || temperature > 115) {
-    errors.temperature = 'Enter a temperature such as 36.8 or 98.6.';
+    errors.temperature = copy.tempFormat;
   }
 
   if (!values.diagnosis.trim()) {
-    errors.diagnosis = 'Enter the diagnosis.';
+    errors.diagnosis = copy.diagnosisError;
   }
 
   const incomplete = values.prescriptions.some(
@@ -149,16 +155,15 @@ function validateVisit(values: {
       !row.name.trim() || !row.dosage.trim() || row.times.length === 0 || !row.duration.trim(),
   );
   if (incomplete) {
-    errors.prescriptions =
-      'For each medicine, enter the name, dosage, at least one time of day, and duration.';
+    errors.prescriptions = copy.rxError;
   }
 
   if (parseFee(values.consultationFee) == null) {
-    errors.consultationFee = 'Enter a consultation fee of 0 or more.';
+    errors.consultationFee = copy.consultError;
   }
 
   if (parseFee(values.medicineFee) == null) {
-    errors.medicineFee = 'Enter a medicine total of 0 or more.';
+    errors.medicineFee = copy.medicineFeeError;
   }
 
   return errors;
@@ -248,6 +253,8 @@ function Chip({
 
 export function VisitScreen() {
   const theme = useTheme();
+  const copy = useI18n().visit;
+  const common = useI18n().common;
   const prescriptionId = useRef(0);
   const [patients, setPatients] = useState<Patient[]>([]);
   const [medicines, setMedicines] = useState<Medicine[]>([]);
@@ -291,7 +298,7 @@ export function VisitScreen() {
         setPatientsError(
           patientResult.reason instanceof Error
             ? patientResult.reason.message
-            : 'Could not load patients.',
+            : copy.patientsError,
         );
       }
 
@@ -299,7 +306,7 @@ export function VisitScreen() {
         setMedicines(medicineResult.value);
       }
     } catch (error) {
-      setPatientsError(error instanceof Error ? error.message : 'Could not load visit data.');
+      setPatientsError(error instanceof Error ? error.message : copy.loadError);
     } finally {
       setLoadingPatients(false);
     }
@@ -365,16 +372,19 @@ export function VisitScreen() {
   }
 
   async function saveVisit() {
-    const nextErrors = validateVisit({
-      patientId: selectedPatientId,
-      symptoms,
-      bloodPressure,
-      temperature,
-      diagnosis,
-      prescriptions,
-      consultationFee,
-      medicineFee,
-    });
+    const nextErrors = validateVisit(
+      {
+        patientId: selectedPatientId,
+        symptoms,
+        bloodPressure,
+        temperature,
+        diagnosis,
+        prescriptions,
+        consultationFee,
+        medicineFee,
+      },
+      copy,
+    );
     setFieldErrors(nextErrors);
     setFormError(null);
     setMessage(null);
@@ -403,11 +413,11 @@ export function VisitScreen() {
           await createTransaction({
             type: 'income',
             amount: billedTotal,
-            description: 'Clinic Visit & Medicine Fee',
+            description: copy.incomeDescription,
             occurred_on: todayIsoDate(),
           });
         } catch (error) {
-          billingError = error instanceof Error ? error.message : 'Could not record the payment.';
+          billingError = error instanceof Error ? error.message : copy.billingError;
         }
       }
 
@@ -421,12 +431,12 @@ export function VisitScreen() {
       setConsultationFee('');
       setMedicineFee('');
       medicineFeeTouched.current = false;
-      setMessage(`Visit recorded for ${patient?.name ?? 'the patient'}.`);
+      setMessage(patient?.name ? `${copy.saved} ${patient.name}` : copy.saved);
       if (billingError) {
-        setFormError(`Visit saved, but the payment could not be recorded. ${billingError}`);
+        setFormError(`${copy.savedWithBilling} ${billingError}`);
       }
     } catch (error) {
-      setFormError(error instanceof Error ? error.message : 'Could not save the visit.');
+      setFormError(error instanceof Error ? error.message : copy.saveError);
     } finally {
       setSaving(false);
     }
@@ -440,20 +450,21 @@ export function VisitScreen() {
   return (
     <ScreenScroll>
       <ScreenHeader
-        title="Medical visit"
-        subtitle="Select a patient and record symptoms, vitals, diagnosis, and prescriptions."
+        title={copy.title}
+        subtitle={copy.subtitle}
       />
 
       <Card>
         {patientsError ? <ErrorBanner message={patientsError} /> : null}
         <SelectField
-          label="Patient"
+          label={common.patient}
+          required
           placeholder={
             loadingPatients
-              ? 'Loading patients…'
+              ? copy.loadingPatients
               : patients.length === 0
-                ? 'Register a patient first'
-                : 'Choose patient'
+                ? copy.registerFirst
+                : copy.choosePatient
           }
           value={selectedPatientId}
           options={patients.map((patient) => ({
@@ -469,19 +480,21 @@ export function VisitScreen() {
         />
 
         <Field
-          label="Symptoms"
+          label={copy.symptoms}
+          required
           value={symptoms}
           error={fieldErrors.symptoms}
           editable={!saving}
           multiline
-          placeholder="Fever, cough, headache"
+          placeholder={copy.symptomsPlaceholder}
           onChangeText={(value) => {
             setSymptoms(value);
             clearFieldError('symptoms');
           }}
         />
         <Field
-          label="Blood pressure"
+          label={copy.bloodPressure}
+          required
           value={bloodPressure}
           error={fieldErrors.bloodPressure}
           editable={!saving}
@@ -493,7 +506,8 @@ export function VisitScreen() {
           }}
         />
         <Field
-          label="Temperature"
+          label={copy.temperature}
+          required
           value={temperature}
           error={fieldErrors.temperature}
           editable={!saving}
@@ -505,41 +519,38 @@ export function VisitScreen() {
           }}
         />
         <Field
-          label="Other vitals"
+          label={copy.otherVitals}
           value={otherVitals}
           editable={!saving}
           multiline
-          placeholder="Pulse, weight, oxygen saturation"
+          placeholder={copy.otherVitalsPlaceholder}
           onChangeText={setOtherVitals}
         />
         <Field
-          label="Diagnosis"
+          label={copy.diagnosis}
+          required
           value={diagnosis}
           error={fieldErrors.diagnosis}
           editable={!saving}
           multiline
-          placeholder="Diagnosis"
+          placeholder={copy.diagnosisPlaceholder}
           onChangeText={(value) => {
             setDiagnosis(value);
             clearFieldError('diagnosis');
           }}
         />
         <Field
-          label="Notes"
+          label={copy.notes}
           value={notes}
           editable={!saving}
           multiline
-          placeholder="Optional notes"
+          placeholder={copy.notesPlaceholder}
           onChangeText={setNotes}
         />
 
         <View style={styles.section}>
-          <SectionTitle>Prescriptions</SectionTitle>
-          {prescriptions.length === 0 ? (
-            <Text style={[styles.hint, { color: theme.textSecondary }]}>
-              Add medicines, dosage, timing, and duration.
-            </Text>
-          ) : null}
+          <SectionTitle>{copy.prescriptions}</SectionTitle>
+          <Text style={[styles.hint, { color: theme.textSecondary }]}>{copy.rxHint}</Text>
 
           {prescriptions.map((row, index) => (
             <View
@@ -549,36 +560,48 @@ export function VisitScreen() {
                 { backgroundColor: theme.background, borderColor: theme.border },
               ]}>
               <View style={styles.rxHeader}>
-                <Text style={[styles.rxTitle, { color: theme.text }]}>Medicine {index + 1}</Text>
+                <Text style={[styles.rxTitle, { color: theme.text }]}>
+                  {copy.medicine} {index + 1}
+                </Text>
                 <IconButton
                   name="trash-outline"
-                  accessibilityLabel={`Remove medicine ${index + 1}`}
+                  accessibilityLabel={`${common.delete} ${copy.medicine} ${index + 1}`}
                   onPress={() => removePrescription(row.id)}
                 />
               </View>
 
               <ComboField
-                label="Medicine name"
-                placeholder="Select or type a medicine"
+                label={copy.medicineName}
+                required
+                placeholder={copy.medicinePlaceholder}
                 value={row.name}
                 options={inventoryOptions}
                 disabled={saving}
                 onChange={(value) => updatePrescription(row.id, { name: value })}
               />
               <Field
-                label="Dosage"
+                label={copy.dosage}
+                required
                 value={row.dosage}
                 editable={!saving}
-                placeholder="1 tablet, 5ml"
+                placeholder={copy.dosagePlaceholder}
                 onChangeText={(value) => updatePrescription(row.id, { dosage: value })}
               />
 
-              <Text style={[styles.label, { color: theme.text }]}>Timing</Text>
+              <FieldLabel label={copy.timing} required />
               <View style={styles.chips}>
                 {TIMES_OF_DAY.map((time) => (
                   <Chip
                     key={time}
-                    label={time}
+                    label={
+                      time === 'Morning'
+                        ? copy.morning
+                        : time === 'Afternoon'
+                          ? copy.afternoon
+                          : time === 'Evening'
+                            ? copy.evening
+                            : copy.night
+                    }
                     selected={row.times.includes(time)}
                     disabled={saving}
                     onPress={() => toggleTime(row.id, time)}
@@ -589,7 +612,13 @@ export function VisitScreen() {
                 {MEAL_TIMES.map((meal) => (
                   <Chip
                     key={meal}
-                    label={meal}
+                    label={
+                      meal === 'Before meals'
+                        ? copy.beforeMeals
+                        : meal === 'After meals'
+                          ? copy.afterMeals
+                          : copy.withMeals
+                    }
                     selected={row.meal === meal}
                     disabled={saving}
                     onPress={() =>
@@ -600,10 +629,11 @@ export function VisitScreen() {
               </View>
 
               <Field
-                label="Duration"
+                label={copy.duration}
+                required
                 value={row.duration}
                 editable={!saving}
-                placeholder="5 days, 7 days"
+                placeholder={copy.durationPlaceholder}
                 onChangeText={(value) => updatePrescription(row.id, { duration: value })}
               />
             </View>
@@ -620,44 +650,42 @@ export function VisitScreen() {
               { borderColor: Palette.primary, opacity: saving ? 0.55 : pressed ? 0.8 : 1 },
             ]}>
             <Ionicons name="add" size={20} color={Palette.primary} />
-            <Text style={styles.addMedicineLabel}>Add Medicine</Text>
+            <Text style={styles.addMedicineLabel}>
+              {common.add} {copy.medicine}
+            </Text>
           </Pressable>
         </View>
 
         <View style={styles.section}>
-          <SectionTitle>Billing / Fee collection</SectionTitle>
+          <SectionTitle>{copy.billing}</SectionTitle>
           <View
             style={[
               styles.billingCard,
               { backgroundColor: theme.background, borderColor: theme.border },
             ]}>
-            <Field
-              label="Consultation fee"
+            <AmountField
+              label={copy.consultationFee}
               value={consultationFee}
               error={fieldErrors.consultationFee}
               editable={!saving}
-              keyboardType="decimal-pad"
-              placeholder="0.00"
               onChangeText={(value) => {
-                setConsultationFee(value.replace(/[^\d.]/g, ''));
+                setConsultationFee(value);
                 clearFieldError('consultationFee');
               }}
             />
-            <Field
-              label="Medicine total fee"
+            <AmountField
+              label={copy.medicineFee}
               value={medicineFee}
               error={fieldErrors.medicineFee}
               editable={!saving}
-              keyboardType="decimal-pad"
-              placeholder="0.00"
               onChangeText={(value) => {
                 medicineFeeTouched.current = true;
-                setMedicineFee(value.replace(/[^\d.]/g, ''));
+                setMedicineFee(value);
                 clearFieldError('medicineFee');
               }}
             />
             <View style={[styles.totalRow, { borderTopColor: theme.border }]}>
-              <Text style={[styles.totalLabel, { color: theme.text }]}>Total amount</Text>
+              <Text style={[styles.totalLabel, { color: theme.text }]}>{copy.totalAmount}</Text>
               <Text style={styles.totalValue}>{formatMoney(totalAmount)}</Text>
             </View>
           </View>
@@ -666,7 +694,7 @@ export function VisitScreen() {
         {formError ? <ErrorBanner message={formError} /> : null}
         {message ? <SuccessBanner message={message} /> : null}
         <PrimaryButton
-          label="Save visit"
+          label={copy.save}
           loading={saving}
           disabled={patients.length === 0}
           onPress={() => {
@@ -701,11 +729,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     lineHeight: 22,
-  },
-  label: {
-    fontSize: 13,
-    fontWeight: '600',
-    lineHeight: 18,
   },
   chips: {
     flexDirection: 'row',

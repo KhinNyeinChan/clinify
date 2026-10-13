@@ -1,6 +1,6 @@
 import DateTimePicker from '@react-native-community/datetimepicker';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { type ComponentProps, type ReactNode, forwardRef, useState } from 'react';
+import { type ComponentProps, type ReactNode, createElement, forwardRef, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -18,7 +18,20 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CardShadow, Palette, Radius, Spacing } from '@/constants/theme';
+import { useI18n } from '@/constants/i18n';
+import { useLanguage, type AppLanguage } from '@/hooks/use-language';
 import { useTheme } from '@/hooks/use-theme';
+
+export function myanmarText(language: AppLanguage, fontSize: number) {
+  if (language !== 'my') {
+    return null;
+  }
+
+  return {
+    lineHeight: Math.ceil(fontSize * 2),
+    paddingTop: 4,
+  };
+}
 
 export function ScreenScroll({
   children,
@@ -100,18 +113,19 @@ export function ListRowActions({
   onEdit: () => void;
   onDelete: () => void;
 }) {
+  const labels = useI18n().common;
   return (
     <View style={styles.listRowActions}>
       <IconButton
         name="create-outline"
-        accessibilityLabel="Edit"
+        accessibilityLabel={labels.edit}
         disabled={disabled}
         onPress={onEdit}
       />
       <IconButton
         name="trash-outline"
         variant="delete"
-        accessibilityLabel="Delete"
+        accessibilityLabel={labels.delete}
         disabled={disabled}
         onPress={onDelete}
       />
@@ -133,6 +147,7 @@ export function ConfirmDialog({
   onNo: () => void;
 }) {
   const theme = useTheme();
+  const labels = useI18n().common;
 
   return (
     <Modal transparent animationType="fade" visible={visible} onRequestClose={onNo}>
@@ -143,7 +158,7 @@ export function ConfirmDialog({
           <View style={styles.dialogActions}>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="No"
+              accessibilityLabel={labels.no}
               disabled={loading}
               onPress={onNo}
               style={({ pressed }) => [
@@ -151,11 +166,11 @@ export function ConfirmDialog({
                 styles.dialogNo,
                 { borderColor: theme.border, opacity: pressed || loading ? 0.72 : 1 },
               ]}>
-              <Text style={[styles.dialogButtonLabel, { color: theme.text }]}>No</Text>
+              <Text style={[styles.dialogButtonLabel, { color: theme.text }]}>{labels.no}</Text>
             </Pressable>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Yes"
+              accessibilityLabel={labels.yes}
               disabled={loading}
               onPress={onYes}
               style={({ pressed }) => [
@@ -166,7 +181,7 @@ export function ConfirmDialog({
               {loading ? (
                 <ActivityIndicator color={Palette.white} />
               ) : (
-                <Text style={[styles.dialogButtonLabel, { color: Palette.white }]}>Yes</Text>
+                <Text style={[styles.dialogButtonLabel, { color: Palette.white }]}>{labels.yes}</Text>
               )}
             </Pressable>
           </View>
@@ -202,15 +217,29 @@ export function ScreenNavHeader({
   );
 }
 
-export function ScreenHeader({ title, subtitle }: { title: string; subtitle?: string }) {
+export function ScreenHeader({
+  title,
+  subtitle,
+  right,
+}: {
+  title: string;
+  subtitle?: string;
+  right?: ReactNode;
+}) {
   const theme = useTheme();
+  const { language } = useLanguage();
 
   return (
     <View style={styles.header}>
-      <Text style={[styles.title, { color: theme.text }]}>{title}</Text>
-      {subtitle ? (
-        <Text style={[styles.subtitle, { color: theme.textSecondary }]}>{subtitle}</Text>
-      ) : null}
+      <View style={styles.headerText}>
+        <Text style={[styles.title, myanmarText(language, 28), { color: theme.text }]}>{title}</Text>
+        {subtitle ? (
+          <Text style={[styles.subtitle, myanmarText(language, 15), { color: theme.textSecondary }]}>
+            {subtitle}
+          </Text>
+        ) : null}
+      </View>
+      {right}
     </View>
   );
 }
@@ -272,7 +301,10 @@ export function Card({
 
 export function SectionTitle({ children }: { children: string }) {
   const theme = useTheme();
-  return <Text style={[styles.sectionTitle, { color: theme.text }]}>{children}</Text>;
+  const { language } = useLanguage();
+  return (
+    <Text style={[styles.sectionTitle, myanmarText(language, 18), { color: theme.text }]}>{children}</Text>
+  );
 }
 
 function SelectMenu({
@@ -292,6 +324,7 @@ function SelectMenu({
 }) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  const noOptions = useI18n().common.noOptions;
 
   return (
     <Modal transparent animationType="fade" visible={visible} onRequestClose={onClose}>
@@ -306,7 +339,7 @@ function SelectMenu({
           </View>
           {children ?? (
             <Text style={[styles.empty, { color: theme.textSecondary }]}>
-              {emptyMessage ?? 'No options yet.'}
+              {emptyMessage ?? noOptions}
             </Text>
           )}
         </View>
@@ -315,18 +348,30 @@ function SelectMenu({
   );
 }
 
+export function FieldLabel({ label, required = false }: { label: string; required?: boolean }) {
+  const theme = useTheme();
+
+  return (
+    <Text style={[styles.label, { color: theme.text }]}>
+      {label}
+      {required ? <Text style={styles.requiredMark}> *</Text> : null}
+    </Text>
+  );
+}
+
 export const Field = forwardRef<
   TextInput,
   {
     label: string;
     error?: string;
+    required?: boolean;
   } & ComponentProps<typeof TextInput>
->(function Field({ label, error, style, multiline, ...inputProps }, ref) {
+>(function Field({ label, error, required = false, style, multiline, ...inputProps }, ref) {
   const theme = useTheme();
 
   return (
     <View style={styles.field}>
-      <Text style={[styles.label, { color: theme.text }]}>{label}</Text>
+      <FieldLabel label={label} required={required} />
       <TextInput
         ref={ref}
         placeholderTextColor={theme.textSecondary}
@@ -348,12 +393,53 @@ export const Field = forwardRef<
   );
 });
 
+function sanitizeAmount(text: string) {
+  const cleaned = text.replace(/[^\d.]/g, '');
+  const dot = cleaned.indexOf('.');
+  if (dot === -1) {
+    return cleaned;
+  }
+  const decimals = cleaned.slice(dot + 1).replace(/\./g, '').slice(0, 2);
+  return `${cleaned.slice(0, dot)}.${decimals}`;
+}
+
+export function formatAmountInput(raw: string) {
+  const [whole, ...decimals] = raw.split('.');
+  const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return decimals.length ? `${grouped}.${decimals.join('')}` : grouped;
+}
+
+/** Shows thousand separators while passing the unformatted number string to `onChangeText`. */
+export const AmountField = forwardRef<
+  TextInput,
+  {
+    label: string;
+    error?: string;
+    required?: boolean;
+    value: string;
+    onChangeText: (raw: string) => void;
+  } & Omit<ComponentProps<typeof TextInput>, 'value' | 'onChangeText'>
+>(function AmountField({ value, onChangeText, style, ...fieldProps }, ref) {
+  return (
+    <Field
+      ref={ref}
+      keyboardType="decimal-pad"
+      placeholder="0.00"
+      {...fieldProps}
+      value={formatAmountInput(value)}
+      onChangeText={(text) => onChangeText(sanitizeAmount(text))}
+      style={[styles.amountInput, style]}
+    />
+  );
+});
+
 export function SelectField({
   label,
   placeholder,
   value,
   options,
   error,
+  required = false,
   disabled = false,
   highlightColor = Palette.primary,
   highlightBackground = Palette.accent,
@@ -361,12 +447,15 @@ export function SelectField({
   onCreate,
   onUpdate,
   onRemove,
+  searchable = false,
+  pageSizes,
 }: {
   label: string;
   placeholder: string;
   value: string | null;
   options: { value: string; label: string }[];
   error?: string;
+  required?: boolean;
   disabled?: boolean;
   highlightColor?: string;
   highlightBackground?: string;
@@ -374,8 +463,11 @@ export function SelectField({
   onCreate?: (name: string) => Promise<{ value: string; label: string }>;
   onUpdate?: (id: string, name: string) => Promise<{ value: string; label: string }>;
   onRemove?: (id: string) => Promise<void>;
+  searchable?: boolean;
+  pageSizes?: number[];
 }) {
   const theme = useTheme();
+  const t = useI18n();
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<'list' | 'create' | 'edit'>('list');
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -384,6 +476,9 @@ export function SelectField({
   const [formBusy, setFormBusy] = useState(false);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [query, setQuery] = useState('');
+  const [pageSize, setPageSize] = useState(pageSizes?.[0] ?? 10);
+  const [page, setPage] = useState(0);
   const selected = options.find((option) => option.value === value);
   const canCreate = Boolean(onCreate);
   const canManage = Boolean(onUpdate || onRemove);
@@ -397,6 +492,8 @@ export function SelectField({
     setFormBusy(false);
     setPendingDeleteId(null);
     setDeleting(false);
+    setQuery('');
+    setPage(0);
   }
 
   function backToList() {
@@ -409,7 +506,7 @@ export function SelectField({
   async function saveForm() {
     const name = newName.trim();
     if (!name) {
-      setFormError('Enter a category name.');
+      setFormError(t.transaction.categoryNameError);
       return;
     }
 
@@ -432,8 +529,8 @@ export function SelectField({
         error instanceof Error
           ? error.message
           : mode === 'edit'
-            ? 'Could not update the category.'
-            : 'Could not add the category.',
+          ? t.transaction.categoryUpdateError
+          : t.transaction.categoryCreateError,
       );
     } finally {
       setFormBusy(false);
@@ -450,18 +547,79 @@ export function SelectField({
       await onRemove(pendingDeleteId);
       setPendingDeleteId(null);
     } catch (error) {
-      setFormError(error instanceof Error ? error.message : 'Could not delete the category.');
+      setFormError(error instanceof Error ? error.message : t.transaction.categoryDeleteError);
       setPendingDeleteId(null);
     } finally {
       setDeleting(false);
     }
   }
 
-  const sheetTitle = mode === 'create' ? 'New category' : mode === 'edit' ? 'Edit category' : label;
+  const sheetTitle = mode === 'create' ? t.transaction.newCategory : mode === 'edit' ? t.transaction.editCategory : label;
+  const filteredOptions = useMemo(() => {
+    if (!searchable) {
+      return options;
+    }
+    const needle = query.trim().toLowerCase();
+    if (!needle) {
+      return options;
+    }
+    return options.filter((option) => option.label.split(' · ')[0].toLowerCase().includes(needle));
+  }, [options, query, searchable]);
+  const sizes = pageSizes && pageSizes.length > 0 ? pageSizes : null;
+  const size = sizes ? (sizes.includes(pageSize) ? pageSize : sizes[0]) : Math.max(filteredOptions.length, 1);
+  const pageCount = Math.max(1, Math.ceil(filteredOptions.length / size));
+  const safePage = Math.min(page, pageCount - 1);
+  const visibleOptions =
+    searchable && sizes ? filteredOptions.slice(safePage * size, safePage * size + size) : filteredOptions;
+
+  function renderOption(option: { value: string; label: string }) {
+    const isSelected = option.value === value;
+    return (
+      <View
+        key={option.value}
+        style={[styles.selectOption, isSelected && { backgroundColor: highlightBackground }]}>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => {
+            onChange(option.value);
+            close();
+          }}
+          style={styles.selectOptionMain}>
+          <Text
+            numberOfLines={1}
+            style={[styles.selectOptionLabel, { color: isSelected ? highlightColor : theme.text }]}>
+            {option.label}
+          </Text>
+        </Pressable>
+        {canManage ? (
+          <ListRowActions
+            disabled={deleting}
+            onEdit={() => {
+              if (!onUpdate) {
+                return;
+              }
+              setMode('edit');
+              setEditingId(option.value);
+              setNewName(option.label);
+              setFormError(null);
+            }}
+            onDelete={() => {
+              if (!onRemove) {
+                return;
+              }
+              setPendingDeleteId(option.value);
+            }}
+          />
+        ) : isSelected ? (
+          <Ionicons name="checkmark" size={18} color={highlightColor} />
+        ) : null}
+      </View>
+    );
+  }
 
   return (
     <View style={styles.field}>
-      <Text style={[styles.label, { color: theme.text }]}>{label}</Text>
+      <FieldLabel label={label} required={required} />
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={label}
@@ -510,7 +668,7 @@ export function SelectField({
             <TextInput
               value={newName}
               editable={!formBusy}
-              placeholder="Category name"
+              placeholder={t.transaction.categoryName}
               placeholderTextColor={theme.textSecondary}
               autoFocus
               onChangeText={(value) => {
@@ -528,7 +686,7 @@ export function SelectField({
             />
             {formError ? <Text style={styles.fieldError}>{formError}</Text> : null}
             <PrimaryButton
-              label={mode === 'edit' ? 'Save' : 'Add'}
+              label={mode === 'edit' ? t.common.save : t.common.add}
               loading={formBusy}
               color={highlightColor}
               pressedColor={Palette.primaryPressed}
@@ -543,65 +701,102 @@ export function SelectField({
         ) : options.length === 0 ? (
           formError ? <Text style={styles.fieldError}>{formError}</Text> : undefined
         ) : (
-          <ScrollView style={styles.selectOptions} keyboardShouldPersistTaps="handled">
-            {formError ? <Text style={styles.fieldError}>{formError}</Text> : null}
-            {options.map((option) => {
-              const isSelected = option.value === value;
-              return (
-                <View
-                  key={option.value}
+          <View style={styles.selectBrowser}>
+            {searchable && mode === 'list' ? (
+              <>
+                <TextInput
+                  value={query}
+                  placeholder={t.common.searchByName}
+                  placeholderTextColor={theme.textSecondary}
+                  onChangeText={(next) => {
+                    setQuery(next);
+                    setPage(0);
+                  }}
                   style={[
-                    styles.selectOption,
-                    isSelected && { backgroundColor: highlightBackground },
-                  ]}>
-                  <Pressable
-                    accessibilityRole="button"
-                    onPress={() => {
-                      onChange(option.value);
-                      close();
-                    }}
-                    style={styles.selectOptionMain}>
-                    <Text
-                      numberOfLines={1}
-                      style={[
-                        styles.selectOptionLabel,
-                        { color: isSelected ? highlightColor : theme.text },
-                      ]}>
-                      {option.label}
-                    </Text>
-                  </Pressable>
-                  {canManage ? (
-                    <ListRowActions
-                      disabled={deleting}
-                      onEdit={() => {
-                        if (!onUpdate) {
-                          return;
-                        }
-                        setMode('edit');
-                        setEditingId(option.value);
-                        setNewName(option.label);
-                        setFormError(null);
-                      }}
-                      onDelete={() => {
-                        if (!onRemove) {
-                          return;
-                        }
-                        setPendingDeleteId(option.value);
-                      }}
-                    />
-                  ) : isSelected ? (
-                    <Ionicons name="checkmark" size={18} color={highlightColor} />
-                  ) : null}
+                    styles.input,
+                    styles.selectSearch,
+                    {
+                      color: theme.text,
+                      backgroundColor: theme.background,
+                      borderColor: theme.border,
+                    },
+                  ]}
+                />
+              </>
+            ) : null}
+            {searchable && filteredOptions.length === 0 ? (
+              <Text style={[styles.empty, { color: theme.textSecondary }]}>{t.common.noNameMatch}</Text>
+            ) : (
+              <ScrollView style={styles.selectOptions} keyboardShouldPersistTaps="handled">
+                {formError ? <Text style={styles.fieldError}>{formError}</Text> : null}
+                {visibleOptions.map((option) => renderOption(option))}
+              </ScrollView>
+            )}
+            {searchable && sizes ? (
+              <View style={styles.pageFooter}>
+                <View style={styles.pageSizes}>
+                  {sizes.map((count) => {
+                    const selectedSize = count === size;
+                    return (
+                      <Pressable
+                        key={count}
+                        accessibilityRole="button"
+                        onPress={() => {
+                          setPageSize(count);
+                          setPage(0);
+                        }}
+                        style={[
+                          styles.pageSize,
+                          {
+                            backgroundColor: selectedSize ? highlightBackground : theme.background,
+                            borderColor: selectedSize ? highlightColor : theme.border,
+                          },
+                        ]}>
+                        <Text style={{ color: selectedSize ? highlightColor : theme.text, fontWeight: '700' }}>
+                          {count}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
                 </View>
-              );
-            })}
-          </ScrollView>
+                {filteredOptions.length > 0 ? (
+                  <View style={styles.pager}>
+                    <Pressable
+                      accessibilityRole="button"
+                      disabled={safePage === 0}
+                      onPress={() => setPage(safePage - 1)}
+                      style={styles.pagerButton}>
+                      <Text style={[styles.pagerLabel, { color: safePage === 0 ? theme.textSecondary : highlightColor }]}>
+                        {t.common.previous}
+                      </Text>
+                    </Pressable>
+                    <Text style={[styles.pagerCount, { color: theme.text }]}>
+                      {safePage + 1} / {pageCount}
+                    </Text>
+                    <Pressable
+                      accessibilityRole="button"
+                      disabled={safePage >= pageCount - 1}
+                      onPress={() => setPage(safePage + 1)}
+                      style={styles.pagerButton}>
+                      <Text
+                        style={[
+                          styles.pagerLabel,
+                          { color: safePage >= pageCount - 1 ? theme.textSecondary : highlightColor },
+                        ]}>
+                        {t.common.next}
+                      </Text>
+                    </Pressable>
+                  </View>
+                ) : null}
+              </View>
+            ) : null}
+          </View>
         )}
       </SelectMenu>
 
       <ConfirmDialog
         visible={pendingDeleteId != null}
-        message="Are you sure you want to delete this category?"
+        message={t.transaction.categoryDeleteConfirm}
         loading={deleting}
         onNo={() => {
           if (!deleting) {
@@ -616,12 +811,45 @@ export function SelectField({
   );
 }
 
+export function NameSearch({
+  value,
+  onChangeText,
+}: {
+  value: string;
+  onChangeText: (value: string) => void;
+}) {
+  const theme = useTheme();
+  const placeholder = useI18n().common.searchByName;
+
+  return (
+    <View style={styles.nameSearchRow}>
+      <TextInput
+        value={value}
+        onChangeText={onChangeText}
+        placeholder={placeholder}
+        placeholderTextColor={theme.textSecondary}
+        autoCapitalize="words"
+        autoCorrect={false}
+        style={[
+          styles.nameSearch,
+          {
+            color: theme.text,
+            backgroundColor: theme.backgroundElement,
+            borderColor: theme.border,
+          },
+        ]}
+      />
+    </View>
+  );
+}
+
 export function ComboField({
   label,
   placeholder,
   value,
   options,
   error,
+  required = false,
   disabled = false,
   onChange,
 }: {
@@ -630,10 +858,12 @@ export function ComboField({
   value: string;
   options: { value: string; label: string }[];
   error?: string;
+  required?: boolean;
   disabled?: boolean;
   onChange: (value: string) => void;
 }) {
   const theme = useTheme();
+  const t = useI18n();
   const [open, setOpen] = useState(false);
 
   function close() {
@@ -642,7 +872,7 @@ export function ComboField({
 
   return (
     <View style={styles.field}>
-      <Text style={[styles.label, { color: theme.text }]}>{label}</Text>
+      <FieldLabel label={label} required={required} />
       <View
         style={[
           styles.input,
@@ -675,8 +905,8 @@ export function ComboField({
 
       <SelectMenu
         visible={open}
-        title="Inventory"
-        emptyMessage="No medicines in inventory."
+        title={t.transaction.inventory}
+        emptyMessage={t.transaction.noMedicines}
         onClose={close}>
         {options.length === 0 ? undefined : (
           <ScrollView style={styles.selectOptions} keyboardShouldPersistTaps="handled">
@@ -718,11 +948,197 @@ function formatClockTime(date: Date) {
   return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
 }
 
+function toIsoDate(date: Date) {
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
+function parseIsoDate(value: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) {
+    return null;
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(year, month - 1, day);
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) {
+    return null;
+  }
+
+  return date;
+}
+
+function formatDisplayDate(date: Date) {
+  return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+function WebDateInput({
+  value,
+  textColor,
+  backgroundColor,
+  borderColor,
+  onChange,
+}: {
+  value: Date;
+  textColor: string;
+  backgroundColor: string;
+  borderColor: string;
+  onChange: (value: Date) => void;
+}) {
+  return createElement('input', {
+    type: 'date',
+    value: toIsoDate(value),
+    onChange: (event: { target: { value: string } }) => {
+      const next = parseIsoDate(event.target.value);
+      if (next) {
+        onChange(next);
+      }
+    },
+    style: {
+      width: '100%',
+      boxSizing: 'border-box',
+      minHeight: 48,
+      fontSize: 16,
+      padding: 12,
+      color: textColor,
+      backgroundColor,
+      borderWidth: 1,
+      borderStyle: 'solid',
+      borderColor,
+      borderRadius: 12,
+    },
+  });
+}
+
+export function DatePickerField({
+  label,
+  placeholder,
+  value,
+  error,
+  required = false,
+  disabled = false,
+  onChange,
+}: {
+  label: string;
+  placeholder: string;
+  value: string;
+  error?: string;
+  required?: boolean;
+  disabled?: boolean;
+  onChange: (value: string) => void;
+}) {
+  const theme = useTheme();
+  const picker = useI18n().common;
+  const selected = parseIsoDate(value);
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState(() => selected ?? new Date());
+
+  function openPicker() {
+    setDraft(selected ?? new Date());
+    setOpen(true);
+  }
+
+  function confirmDate(next: Date) {
+    onChange(toIsoDate(next));
+    setOpen(false);
+  }
+
+  function dismissPicker() {
+    setOpen(false);
+  }
+
+  return (
+    <View style={styles.field}>
+      <FieldLabel label={label} required={required} />
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        disabled={disabled}
+        onPress={openPicker}
+        style={({ pressed }) => [
+          styles.input,
+          styles.selectTrigger,
+          {
+            backgroundColor: theme.background,
+            borderColor: error ? Palette.error : theme.border,
+            opacity: disabled ? 0.55 : pressed ? 0.86 : 1,
+          },
+        ]}>
+        <Text
+          numberOfLines={1}
+          style={[styles.selectValue, { color: selected ? theme.text : theme.textSecondary }]}>
+          {selected ? formatDisplayDate(selected) : placeholder}
+        </Text>
+        <Ionicons name="calendar-outline" size={20} color={theme.textSecondary} />
+      </Pressable>
+      {error ? <Text style={styles.fieldError}>{error}</Text> : null}
+
+      {open && Platform.OS === 'android' ? (
+        <DateTimePicker
+          value={draft}
+          mode="date"
+          display="calendar"
+          positiveButton={{ label: picker.ok, textColor: Palette.primary }}
+          negativeButton={{ label: picker.cancel, textColor: Palette.primary }}
+          onValueChange={(_event, date) => confirmDate(date)}
+          onDismiss={dismissPicker}
+        />
+      ) : null}
+
+      {Platform.OS !== 'android' ? (
+        <Modal transparent animationType="fade" visible={open} onRequestClose={dismissPicker}>
+          <View style={styles.timePickerOverlay}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={dismissPicker} />
+            <View style={[styles.timePickerSheet, { backgroundColor: theme.backgroundElement }]}>
+              <Text style={[styles.selectSheetTitle, { color: theme.text }]}>{label}</Text>
+              {Platform.OS === 'web' ? (
+                <WebDateInput
+                  value={draft}
+                  textColor={theme.text}
+                  backgroundColor={theme.background}
+                  borderColor={theme.border}
+                  onChange={setDraft}
+                />
+              ) : (
+                <DateTimePicker
+                  value={draft}
+                  mode="date"
+                  display="spinner"
+                  themeVariant="light"
+                  style={styles.datePicker}
+                  onValueChange={(_event, date) => {
+                    if (date) {
+                      setDraft(date);
+                    }
+                  }}
+                  onDismiss={dismissPicker}
+                />
+              )}
+              <View style={styles.timePickerActions}>
+                <Pressable onPress={dismissPicker}>
+                  <Text style={styles.timePickerAction}>{picker.cancel}</Text>
+                </Pressable>
+                <Pressable onPress={() => confirmDate(draft)}>
+                  <Text style={styles.timePickerAction}>{picker.ok}</Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      ) : null}
+    </View>
+  );
+}
+
 export function TimePickerField({
   label,
   placeholder,
   value,
   error,
+  required = false,
   disabled = false,
   onChange,
 }: {
@@ -730,10 +1146,12 @@ export function TimePickerField({
   placeholder: string;
   value: Date | null;
   error?: string;
+  required?: boolean;
   disabled?: boolean;
   onChange: (value: Date) => void;
 }) {
   const theme = useTheme();
+  const picker = useI18n().common;
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(() => value ?? new Date());
 
@@ -753,7 +1171,7 @@ export function TimePickerField({
 
   return (
     <View style={styles.field}>
-      <Text style={[styles.label, { color: theme.text }]}>{label}</Text>
+      <FieldLabel label={label} required={required} />
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={label}
@@ -783,8 +1201,8 @@ export function TimePickerField({
           mode="time"
           display="clock"
           is24Hour
-          positiveButton={{ label: 'OK', textColor: Palette.primary }}
-          negativeButton={{ label: 'CANCEL', textColor: Palette.primary }}
+          positiveButton={{ label: picker.ok, textColor: Palette.primary }}
+          negativeButton={{ label: picker.cancel, textColor: Palette.primary }}
           onValueChange={(_event, date) => confirmTime(date)}
           onDismiss={dismissPicker}
         />
@@ -806,10 +1224,10 @@ export function TimePickerField({
               />
               <View style={styles.timePickerActions}>
                 <Pressable onPress={dismissPicker}>
-                  <Text style={styles.timePickerAction}>CANCEL</Text>
+                  <Text style={styles.timePickerAction}>{picker.cancel}</Text>
                 </Pressable>
                 <Pressable onPress={() => confirmTime(draft)}>
-                  <Text style={styles.timePickerAction}>OK</Text>
+                  <Text style={styles.timePickerAction}>{picker.ok}</Text>
                 </Pressable>
               </View>
             </View>
@@ -945,13 +1363,16 @@ export function StatCard({
   hint?: string;
 }) {
   const theme = useTheme();
+  const { language } = useLanguage();
 
   return (
     <View style={[styles.statCard, CardShadow, { backgroundColor: theme.backgroundElement }]}>
       <View style={styles.statAccent} />
-      <Text style={[styles.statLabel, { color: theme.textSecondary }]}>{label}</Text>
+      <Text style={[styles.statLabel, myanmarText(language, 12), { color: theme.textSecondary }]}>{label}</Text>
       <Text style={[styles.statValue, { color: theme.text }]}>{value}</Text>
-      {hint ? <Text style={[styles.statHint, { color: theme.textSecondary }]}>{hint}</Text> : null}
+      {hint ? (
+        <Text style={[styles.statHint, myanmarText(language, 12), { color: theme.textSecondary }]}>{hint}</Text>
+      ) : null}
     </View>
   );
 }
@@ -966,6 +1387,7 @@ export function QuickAction({
   onPress: () => void;
 }) {
   const theme = useTheme();
+  const { language } = useLanguage();
 
   return (
     <Pressable
@@ -977,8 +1399,10 @@ export function QuickAction({
         { backgroundColor: theme.backgroundElement, opacity: pressed ? 0.86 : 1 },
       ]}>
       <View style={styles.quickDot} />
-      <Text style={[styles.quickLabel, { color: theme.text }]}>{label}</Text>
-      <Text style={[styles.quickCaption, { color: theme.textSecondary }]}>{caption}</Text>
+      <Text style={[styles.quickLabel, myanmarText(language, 15), { color: theme.text }]}>{label}</Text>
+      <Text style={[styles.quickCaption, myanmarText(language, 12), { color: theme.textSecondary }]}>
+        {caption}
+      </Text>
     </Pressable>
   );
 }
@@ -991,10 +1415,10 @@ export function firstSearchParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
 }
 
-export function deleteErrorMessage(error: unknown, fallback: string) {
+export function deleteErrorMessage(error: unknown, fallback: string, inUseMessage?: string) {
   const message = error instanceof Error ? error.message : fallback;
   if (/foreign key|violates/i.test(message)) {
-    return 'This record is used elsewhere and cannot be deleted yet.';
+    return inUseMessage ?? 'This record is used elsewhere and cannot be deleted yet.';
   }
   return message;
 }
@@ -1011,8 +1435,15 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
   header: {
-    gap: Spacing.one,
+    alignItems: 'flex-start',
+    flexDirection: 'row',
+    gap: Spacing.two,
+    justifyContent: 'space-between',
     marginBottom: Spacing.one,
+  },
+  headerText: {
+    flex: 1,
+    gap: Spacing.one,
   },
   navHeader: {
     alignItems: 'center',
@@ -1130,6 +1561,13 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     lineHeight: 18,
   },
+  requiredMark: {
+    color: Palette.error,
+    fontWeight: '700',
+  },
+  amountInput: {
+    textAlign: 'right',
+  },
   input: {
     borderRadius: Radius.sm,
     borderWidth: 1,
@@ -1169,6 +1607,7 @@ const styles = StyleSheet.create({
     borderRadius: Radius.md,
     gap: Spacing.one,
     maxHeight: '85%',
+    overflow: 'hidden',
     padding: Spacing.three,
   },
   selectSheetHeader: {
@@ -1198,6 +1637,54 @@ const styles = StyleSheet.create({
   },
   selectOptions: {
     flexGrow: 0,
+    flexShrink: 1,
+    maxHeight: 220,
+  },
+  selectBrowser: {
+    flexShrink: 1,
+    gap: Spacing.two,
+    minHeight: 0,
+  },
+  selectSearch: {
+    minHeight: 44,
+    paddingVertical: 10,
+  },
+  pageSizes: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.two,
+    justifyContent: 'flex-end',
+  },
+  pageSize: {
+    alignItems: 'center',
+    borderRadius: Radius.pill,
+    borderWidth: 1,
+    minWidth: 44,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  pageFooter: {
+    alignItems: 'flex-end',
+    gap: Spacing.two,
+    marginTop: Spacing.one,
+    width: '100%',
+  },
+  pager: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: Spacing.three,
+    justifyContent: 'flex-end',
+  },
+  pagerButton: {
+    paddingVertical: 8,
+  },
+  pagerLabel: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  pagerCount: {
+    fontSize: 14,
+    fontWeight: '700',
   },
   selectOption: {
     alignItems: 'center',
@@ -1235,6 +1722,10 @@ const styles = StyleSheet.create({
     padding: Spacing.four,
     width: '100%',
     maxWidth: 360,
+  },
+  datePicker: {
+    height: 216,
+    width: '100%',
   },
   timePickerActions: {
     flexDirection: 'row',
@@ -1336,7 +1827,6 @@ const styles = StyleSheet.create({
     borderRadius: Radius.md,
     flex: 1,
     minWidth: 104,
-    overflow: 'hidden',
     padding: Spacing.three,
   },
   statAccent: {
@@ -1385,5 +1875,18 @@ const styles = StyleSheet.create({
   quickCaption: {
     fontSize: 12,
     lineHeight: 16,
+  },
+  nameSearchRow: {
+    alignItems: 'flex-end',
+    marginBottom: Spacing.two,
+  },
+  nameSearch: {
+    borderRadius: Radius.sm,
+    borderWidth: 1,
+    fontSize: 15,
+    minHeight: 40,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: 8,
+    width: '58%',
   },
 });

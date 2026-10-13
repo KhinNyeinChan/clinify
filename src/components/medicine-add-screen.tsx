@@ -2,6 +2,7 @@ import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useState } from 'react';
 
 import {
+  AmountField,
   ErrorBanner,
   Field,
   firstSearchParam,
@@ -13,48 +14,69 @@ import {
 } from '@/components/clinic-ui';
 import { createMedicine, getMedicine, updateMedicine } from '@/services/medicines';
 import { listSuppliers, type Supplier } from '@/services/suppliers';
+import { useI18n } from '@/constants/i18n';
 
 type MedicineErrors = {
   name?: string;
   stock?: string;
   price?: string;
   supplier?: string;
+  boxUnit?: string;
+  unitsPerBox?: string;
 };
 
-function validateMedicine(values: {
-  name: string;
-  stock: string;
-  price: string;
-  supplierId: string | null;
-}): MedicineErrors {
+function validateMedicine(
+  values: {
+    name: string;
+    stock: string;
+    price: string;
+    supplierId: string | null;
+    boxUnitName: string;
+    unitsPerBox: string;
+  },
+  copy: ReturnType<typeof useI18n>['medicineForm'],
+): MedicineErrors {
   const errors: MedicineErrors = {};
   const stock = Number(values.stock);
   const price = Number(values.price);
+  const unitsPerBox = Number(values.unitsPerBox);
 
   if (!values.name.trim()) {
-    errors.name = 'Enter the medicine name.';
+    errors.name = copy.nameError;
   }
 
   if (!values.stock.trim()) {
-    errors.stock = 'Enter the stock quantity.';
+    errors.stock = copy.stockError;
   } else if (!Number.isInteger(stock) || stock < 0) {
-    errors.stock = 'Enter a whole number of 0 or more.';
+    errors.stock = copy.stockInvalid;
   }
 
   if (!values.price.trim()) {
-    errors.price = 'Enter the price.';
+    errors.price = copy.priceError;
   } else if (!Number.isFinite(price) || price < 0) {
-    errors.price = 'Enter a price of 0 or more.';
+    errors.price = copy.priceInvalid;
   }
 
   if (!values.supplierId) {
-    errors.supplier = 'Select a supplier.';
+    errors.supplier = copy.supplierError;
+  }
+
+  if (!values.boxUnitName.trim()) {
+    errors.boxUnit = copy.boxUnitError;
+  }
+
+  if (!values.unitsPerBox.trim()) {
+    errors.unitsPerBox = copy.unitsPerBoxError;
+  } else if (!Number.isInteger(unitsPerBox) || unitsPerBox < 1) {
+    errors.unitsPerBox = copy.unitsPerBoxInvalid;
   }
 
   return errors;
 }
 
 export function MedicineAddScreen() {
+  const copy = useI18n().medicineForm;
+  const common = useI18n().common;
   const { id } = useLocalSearchParams<{ id?: string | string[] }>();
   const recordId = firstSearchParam(id);
   const isEditing = Boolean(recordId);
@@ -62,6 +84,8 @@ export function MedicineAddScreen() {
   const [stock, setStock] = useState('');
   const [price, setPrice] = useState('');
   const [selectedSupplierId, setSelectedSupplierId] = useState<string | null>(null);
+  const [boxUnitName, setBoxUnitName] = useState('');
+  const [unitsPerBox, setUnitsPerBox] = useState('1');
   const [fieldErrors, setFieldErrors] = useState<MedicineErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -80,6 +104,8 @@ export function MedicineAddScreen() {
         setName(medicine.name);
         setStock(String(medicine.stock));
         setPrice(Number.isInteger(medicine.price) ? String(medicine.price) : medicine.price.toFixed(2));
+        setBoxUnitName(medicine.box_unit_name);
+        setUnitsPerBox(String(medicine.units_per_box));
         setSelectedSupplierId(
           supplierRows.some((supplier) => supplier.id === medicine.supplier_id)
             ? medicine.supplier_id
@@ -96,8 +122,8 @@ export function MedicineAddScreen() {
         error instanceof Error
           ? error.message
           : isEditing
-            ? 'Could not load the medicine.'
-            : 'Could not load suppliers.',
+            ? copy.loadError
+            : copy.suppliersError,
       );
     } finally {
       setLoading(false);
@@ -116,12 +142,17 @@ export function MedicineAddScreen() {
   }
 
   async function saveMedicine() {
-    const nextErrors = validateMedicine({
-      name,
-      stock,
-      price,
-      supplierId: selectedSupplierId,
-    });
+    const nextErrors = validateMedicine(
+      {
+        name,
+        stock,
+        price,
+        supplierId: selectedSupplierId,
+        boxUnitName,
+        unitsPerBox,
+      },
+      copy,
+    );
     setFieldErrors(nextErrors);
     setFormError(null);
 
@@ -134,6 +165,8 @@ export function MedicineAddScreen() {
       stock: Number(stock),
       price: Number(price),
       supplier_id: selectedSupplierId,
+      box_unit_name: boxUnitName.trim(),
+      units_per_box: Number(unitsPerBox),
     };
 
     setSaving(true);
@@ -149,8 +182,8 @@ export function MedicineAddScreen() {
         error instanceof Error
           ? error.message
           : isEditing
-            ? 'Could not update the medicine.'
-            : 'Could not add the medicine.',
+            ? copy.updateError
+            : copy.createError,
       );
     } finally {
       setSaving(false);
@@ -159,51 +192,51 @@ export function MedicineAddScreen() {
 
   return (
     <ScreenScroll withTabBar={false}>
-      <ScreenNavHeader title={isEditing ? 'Edit medicine' : 'Add medicine'} onBack={() => router.back()} />
+      <ScreenNavHeader title={isEditing ? copy.edit : copy.add} onBack={() => router.back()} />
       {loading ? (
         <LoadingMark />
       ) : (
         <>
           <Field
-            label="Name"
+            label={common.name}
+            required
             value={name}
             error={fieldErrors.name}
             editable={!saving}
-            placeholder="Medicine or supplement"
+            placeholder={copy.namePlaceholder}
             onChangeText={(value) => {
               setName(value);
               clearFieldError('name');
             }}
           />
           <Field
-            label="Stock"
+            label={common.stock}
+            required
             value={stock}
             error={fieldErrors.stock}
             editable={!saving}
             keyboardType="number-pad"
-            placeholder="Quantity on hand"
+            placeholder={copy.stockPlaceholder}
             onChangeText={(value) => {
               setStock(value.replace(/[^\d]/g, ''));
               clearFieldError('stock');
             }}
           />
-          <Field
-            label="Price"
+          <AmountField
+            label={common.price}
+            required
             value={price}
             error={fieldErrors.price}
             editable={!saving}
-            keyboardType="decimal-pad"
-            placeholder="0.00"
             onChangeText={(value) => {
-              setPrice(value.replace(/[^\d.]/g, ''));
+              setPrice(value);
               clearFieldError('price');
             }}
           />
           <SelectField
-            label="Supplier"
-            placeholder={
-              suppliers.length === 0 ? 'Add a supplier first' : 'Choose supplier'
-            }
+            label={common.supplier}
+            required
+            placeholder={suppliers.length === 0 ? copy.addSupplierFirst : copy.chooseSupplier}
             value={selectedSupplierId}
             options={suppliers.map((supplier) => ({
               value: supplier.id,
@@ -216,9 +249,34 @@ export function MedicineAddScreen() {
               clearFieldError('supplier');
             }}
           />
+          <Field
+            label={copy.boxUnitName}
+            required
+            value={boxUnitName}
+            error={fieldErrors.boxUnit}
+            editable={!saving}
+            placeholder={copy.boxUnitPlaceholder}
+            onChangeText={(value) => {
+              setBoxUnitName(value);
+              clearFieldError('boxUnit');
+            }}
+          />
+          <Field
+            label={copy.unitsPerBox}
+            required
+            value={unitsPerBox}
+            error={fieldErrors.unitsPerBox}
+            editable={!saving}
+            keyboardType="number-pad"
+            placeholder={copy.unitsPerBoxPlaceholder}
+            onChangeText={(value) => {
+              setUnitsPerBox(value.replace(/[^\d]/g, ''));
+              clearFieldError('unitsPerBox');
+            }}
+          />
           {formError ? <ErrorBanner message={formError} /> : null}
           <PrimaryButton
-            label={isEditing ? 'Save medicine' : 'Add medicine'}
+            label={isEditing ? copy.save : copy.add}
             loading={saving}
             disabled={suppliers.length === 0}
             onPress={() => {

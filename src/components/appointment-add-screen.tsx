@@ -1,9 +1,10 @@
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useState } from 'react';
+import { StyleSheet, Switch, Text, View } from 'react-native';
 
 import {
+  DatePickerField,
   ErrorBanner,
-  Field,
   firstSearchParam,
   LoadingMark,
   PrimaryButton,
@@ -12,8 +13,11 @@ import {
   SelectField,
   TimePickerField,
 } from '@/components/clinic-ui';
-import { createAppointment, getAppointment, updateAppointment } from '@/services/appointments';
+import { createAppointment, getAppointment, updateAppointment, type AppointmentStatus } from '@/services/appointments';
 import { listPatients, type Patient } from '@/services/patients';
+import { Palette, Spacing } from '@/constants/theme';
+import { useI18n } from '@/constants/i18n';
+import { useTheme } from '@/hooks/use-theme';
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -69,27 +73,31 @@ function validateAppointment(
   patientId: string | null,
   date: string,
   time: Date | null,
+  copy: ReturnType<typeof useI18n>['appointment'],
 ): AppointmentErrors {
   const errors: AppointmentErrors = {};
 
   if (!patientId) {
-    errors.patient = 'Select a patient.';
+    errors.patient = copy.selectPatient;
   }
 
   if (!date.trim()) {
-    errors.date = 'Enter an appointment date.';
+    errors.date = copy.dateError;
   } else if (!isRealDate(date)) {
-    errors.date = 'Use a real date in YYYY-MM-DD format.';
+    errors.date = copy.dateInvalid;
   }
 
   if (isRealDate(date) && !time) {
-    errors.time = 'Choose an appointment time.';
+    errors.time = copy.timeError;
   }
 
   return errors;
 }
 
 export function AppointmentAddScreen() {
+  const theme = useTheme();
+  const copy = useI18n().appointment;
+  const common = useI18n().common;
   const { id } = useLocalSearchParams<{ id?: string | string[] }>();
   const recordId = firstSearchParam(id);
   const isEditing = Boolean(recordId);
@@ -98,6 +106,7 @@ export function AppointmentAddScreen() {
   const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
   const [appointmentDate, setAppointmentDate] = useState(todayIsoDate);
   const [appointmentTime, setAppointmentTime] = useState<Date | null>(null);
+  const [completed, setCompleted] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<AppointmentErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -114,12 +123,14 @@ export function AppointmentAddScreen() {
         const date = appointment.appointment_date.slice(0, 10);
         setAppointmentDate(date);
         setAppointmentTime(timeToDate(date, appointment.appointment_time || appointment.appointment_date));
+        setCompleted(appointment.status === 'completed');
         setSelectedPatientId(
           patientRows.some((patient) => patient.id === appointment.patient_id)
             ? appointment.patient_id
             : null,
         );
       } else {
+        setCompleted(false);
         setSelectedPatientId((current) =>
           current && patientRows.some((patient) => patient.id === current) ? current : null,
         );
@@ -130,8 +141,8 @@ export function AppointmentAddScreen() {
         error instanceof Error
           ? error.message
           : isEditing
-            ? 'Could not load the appointment.'
-            : 'Could not load patients.',
+            ? copy.loadError
+            : copy.patientsError,
       );
     } finally {
       setLoading(false);
@@ -150,7 +161,7 @@ export function AppointmentAddScreen() {
   }
 
   async function saveAppointment() {
-    const nextErrors = validateAppointment(selectedPatientId, appointmentDate, appointmentTime);
+    const nextErrors = validateAppointment(selectedPatientId, appointmentDate, appointmentTime, copy);
     setFieldErrors(nextErrors);
     setFormError(null);
 
@@ -158,10 +169,12 @@ export function AppointmentAddScreen() {
       return;
     }
 
+    const status: AppointmentStatus = completed ? 'completed' : 'pending';
     const payload = {
       patient_id: selectedPatientId,
       appointment_date: appointmentDate,
       appointment_time: formatAppointmentTime(appointmentTime),
+      status,
     };
 
     setSaving(true);
@@ -177,8 +190,8 @@ export function AppointmentAddScreen() {
         error instanceof Error
           ? error.message
           : isEditing
-            ? 'Could not update the appointment.'
-            : 'Could not book the appointment.',
+            ? copy.updateError
+            : copy.createError,
       );
     } finally {
       setSaving(false);
@@ -188,7 +201,7 @@ export function AppointmentAddScreen() {
   return (
     <ScreenScroll withTabBar={false}>
       <ScreenNavHeader
-        title={isEditing ? 'Edit appointment' : 'Add appointment'}
+        title={isEditing ? copy.edit : copy.add}
         onBack={() => router.back()}
       />
       {loading ? (
@@ -196,10 +209,11 @@ export function AppointmentAddScreen() {
       ) : (
         <>
           <SelectField
-            label="Patient"
-            placeholder={
-              patients.length === 0 ? 'Register a patient first' : 'Choose patient'
-            }
+            label={common.patient}
+            required
+            searchable
+            pageSizes={[10, 20, 30, 50, 100]}
+            placeholder={patients.length === 0 ? copy.registerFirst : copy.choosePatient}
             value={selectedPatientId}
             options={patients.map((patient) => ({
               value: patient.id,
@@ -212,14 +226,14 @@ export function AppointmentAddScreen() {
               clearFieldError('patient');
             }}
           />
-          <Field
-            label="Date"
+          <DatePickerField
+            label={common.date}
+            required
+            placeholder={common.chooseDate}
             value={appointmentDate}
             error={fieldErrors.date}
-            editable={!saving}
-            autoCapitalize="none"
-            placeholder="YYYY-MM-DD"
-            onChangeText={(value) => {
+            disabled={saving}
+            onChange={(value) => {
               setAppointmentDate(value);
               setFieldErrors((current) => ({ ...current, date: undefined, time: undefined }));
               setFormError(null);
@@ -227,8 +241,9 @@ export function AppointmentAddScreen() {
           />
           {isRealDate(appointmentDate) ? (
             <TimePickerField
-              label="Time"
-              placeholder="Choose time"
+              label={common.time}
+              required
+              placeholder={common.chooseTime}
               value={appointmentTime}
               error={fieldErrors.time}
               disabled={saving}
@@ -238,9 +253,25 @@ export function AppointmentAddScreen() {
               }}
             />
           ) : null}
+          <View style={styles.statusRow}>
+            <View style={styles.statusCopy}>
+              <Text style={[styles.statusLabel, { color: theme.text }]}>{common.status}</Text>
+              <Text style={[styles.statusValue, { color: theme.textSecondary }]}>
+                {completed ? common.completed : common.pending}
+              </Text>
+            </View>
+            <Switch
+              accessibilityLabel={common.status}
+              value={completed}
+              disabled={saving}
+              onValueChange={setCompleted}
+              trackColor={{ false: theme.border, true: Palette.primary }}
+              thumbColor={Palette.white}
+            />
+          </View>
           {formError ? <ErrorBanner message={formError} /> : null}
           <PrimaryButton
-            label={isEditing ? 'Save appointment' : 'Book appointment'}
+            label={isEditing ? copy.save : copy.book}
             loading={saving}
             disabled={patients.length === 0}
             onPress={() => {
@@ -252,3 +283,24 @@ export function AppointmentAddScreen() {
     </ScreenScroll>
   );
 }
+
+const styles = StyleSheet.create({
+  statusRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    minHeight: 52,
+  },
+  statusCopy: {
+    gap: Spacing.one,
+  },
+  statusLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    lineHeight: 18,
+  },
+  statusValue: {
+    fontSize: 16,
+    lineHeight: 22,
+  },
+});

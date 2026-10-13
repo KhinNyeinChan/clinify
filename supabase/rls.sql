@@ -59,6 +59,9 @@ with check (true);
 alter table if exists public.appointments
   add column if not exists appointment_time time;
 
+alter table if exists public.appointments
+  add column if not exists status text not null default 'pending';
+
 alter table if exists public.transactions
   add column if not exists type text,
   add column if not exists description text,
@@ -102,4 +105,7 @@ values
   ('Utilities'),
   ('Salaries')
 on conflict (name) do nothing;
+
+alter table if exists public.patients
+  add column if not exists note text;
 

@@ -8,6 +8,7 @@ export type NewTransaction = {
   description: string;
   occurred_on: string;
   category_id?: string | null;
+  supplier_id?: string | null;
 };
 
 export type ClinicTransaction = NewTransaction & {
@@ -16,13 +17,22 @@ export type ClinicTransaction = NewTransaction & {
 };
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const SUPPLIER_SELECT =
+  'id, amount, type, description, occurred_on, category_id, supplier_id, expense_categories(name)';
 const FULL_SELECT =
   'id, amount, type, description, occurred_on, category_id, expense_categories(name)';
 const DETAIL_SELECT = 'id, amount, type, description, occurred_on, category_id';
 const BASIC_SELECT = 'id, amount';
+const SELECT_ATTEMPTS = [
+  SUPPLIER_SELECT,
+  FULL_SELECT,
+  DETAIL_SELECT,
+  'id, amount, type, description, occurred_on',
+  BASIC_SELECT,
+];
 
 function isMissingColumn(message: string) {
-  return /type|description|occurred_on|category_id|expense_categories|schema cache|could not find|column|relationship/i.test(
+  return /type|description|occurred_on|category_id|supplier_id|expense_categories|schema cache|could not find|column|relationship/i.test(
     message,
   );
 }
@@ -68,6 +78,7 @@ function asTransaction(row: {
   occurred_on?: string | null;
   created_at?: string | null;
   category_id?: string | null;
+  supplier_id?: string | null;
   category?: string | null;
   expense_categories?: unknown;
 }): ClinicTransaction {
@@ -81,7 +92,15 @@ function asTransaction(row: {
     description: (row.description ?? '').trim() || (type === 'income' ? 'Income' : 'Expense'),
     occurred_on: DATE_PATTERN.test(occurred) ? occurred : todayIsoDate(),
     category_id: row.category_id ?? null,
+    supplier_id: row.supplier_id ?? null,
     category_name: relatedCategoryName(row.expense_categories) ?? row.category?.trim() ?? null,
+  };
+}
+
+function supplierPayload(transaction: NewTransaction) {
+  return {
+    ...fullPayload(transaction),
+    supplier_id: transaction.type === 'expense' ? transaction.supplier_id || null : null,
   };
 }
 
@@ -110,11 +129,23 @@ function basicPayload(transaction: NewTransaction) {
   };
 }
 
+function writeAttempts(transaction: NewTransaction) {
+  return [
+    { payload: supplierPayload(transaction), select: SUPPLIER_SELECT },
+    { payload: fullPayload(transaction), select: FULL_SELECT },
+    { payload: detailPayload(transaction), select: DETAIL_SELECT },
+    { payload: basicPayload(transaction), select: BASIC_SELECT },
+  ];
+}
+
 async function mapRows(rows: unknown[] | null) {
   return (rows ?? []).map((row) => parseTransaction(row));
 }
 
-function parseTransaction(row: unknown, extra?: { category_id?: string | null }) {
+function parseTransaction(
+  row: unknown,
+  extra?: { category_id?: string | null; supplier_id?: string | null },
+) {
   const data = (row ?? {}) as Record<string, unknown>;
   return asTransaction({
     id: String(data.id ?? ''),
@@ -124,20 +155,14 @@ function parseTransaction(row: unknown, extra?: { category_id?: string | null })
     occurred_on: data.occurred_on as string | null | undefined,
     created_at: data.created_at as string | null | undefined,
     category_id: extra?.category_id ?? (data.category_id as string | null | undefined) ?? null,
+    supplier_id: extra?.supplier_id ?? (data.supplier_id as string | null | undefined) ?? null,
     category: data.category as string | null | undefined,
     expense_categories: data.expense_categories,
   });
 }
 
 export async function listTransactions(): Promise<ClinicTransaction[]> {
-  const attempts = [
-    FULL_SELECT,
-    DETAIL_SELECT,
-    'id, amount, type, description, occurred_on',
-    BASIC_SELECT,
-  ];
-
-  for (const columns of attempts) {
+  for (const columns of SELECT_ATTEMPTS) {
     const result = await supabase
       .from('transactions')
       .select(columns)
@@ -156,14 +181,7 @@ export async function listTransactions(): Promise<ClinicTransaction[]> {
 }
 
 export async function getTransaction(id: string): Promise<ClinicTransaction> {
-  const attempts = [
-    FULL_SELECT,
-    DETAIL_SELECT,
-    'id, amount, type, description, occurred_on',
-    BASIC_SELECT,
-  ];
-
-  for (const columns of attempts) {
+  for (const columns of SELECT_ATTEMPTS) {
     const result = await supabase.from('transactions').select(columns).eq('id', id).single();
 
     if (!result.error) {
@@ -179,11 +197,7 @@ export async function getTransaction(id: string): Promise<ClinicTransaction> {
 }
 
 export async function createTransaction(transaction: NewTransaction): Promise<ClinicTransaction> {
-  const attempts = [
-    { payload: fullPayload(transaction), select: FULL_SELECT },
-    { payload: detailPayload(transaction), select: DETAIL_SELECT },
-    { payload: basicPayload(transaction), select: BASIC_SELECT },
-  ];
+  const attempts = writeAttempts(transaction);
 
   for (const attempt of attempts) {
     const result = await supabase
@@ -193,7 +207,10 @@ export async function createTransaction(transaction: NewTransaction): Promise<Cl
       .single();
 
     if (!result.error) {
-      return parseTransaction(result.data, { category_id: transaction.category_id });
+      return parseTransaction(result.data, {
+        category_id: transaction.category_id,
+        supplier_id: transaction.supplier_id,
+      });
     }
 
     if (!isMissingColumn(result.error.message)) {
@@ -208,11 +225,7 @@ export async function updateTransaction(
   id: string,
   transaction: NewTransaction,
 ): Promise<ClinicTransaction> {
-  const attempts = [
-    { payload: fullPayload(transaction), select: FULL_SELECT },
-    { payload: detailPayload(transaction), select: DETAIL_SELECT },
-    { payload: basicPayload(transaction), select: BASIC_SELECT },
-  ];
+  const attempts = writeAttempts(transaction);
 
   for (const attempt of attempts) {
     const result = await supabase
@@ -223,7 +236,10 @@ export async function updateTransaction(
       .single();
 
     if (!result.error) {
-      return parseTransaction(result.data, { category_id: transaction.category_id });
+      return parseTransaction(result.data, {
+        category_id: transaction.category_id,
+        supplier_id: transaction.supplier_id,
+      });
     }
 
     if (!isMissingColumn(result.error.message)) {

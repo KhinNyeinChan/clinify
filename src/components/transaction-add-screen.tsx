@@ -2,7 +2,9 @@ import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 
 import {
+  DatePickerField,
   ErrorBanner,
+  AmountField,
   Field,
   firstSearchParam,
   LoadingMark,
@@ -18,16 +20,19 @@ import {
   updateExpenseCategory,
   type ExpenseCategory,
 } from '@/services/expense-categories';
+import { listSuppliers, type Supplier } from '@/services/suppliers';
 import {
   createTransaction,
   getTransaction,
   updateTransaction,
   type TransactionKind,
 } from '@/services/transactions';
+import { useI18n } from '@/constants/i18n';
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const FORM_ACCENT = '#ED1B2E';
 const FORM_ACCENT_FILL = '#fde7e9';
+const NO_SUPPLIER = '__none__';
 
 type TransactionErrors = {
   description?: string;
@@ -58,44 +63,49 @@ function asKind(value: string | undefined): TransactionKind {
   return value === 'expense' ? 'expense' : 'income';
 }
 
-function validateTransaction(values: {
-  description: string;
-  amount: string;
-  date: string;
-  type: TransactionKind | null;
-  categoryId: string | null;
-}): TransactionErrors {
+function validateTransaction(
+  values: {
+    description: string;
+    amount: string;
+    date: string;
+    type: TransactionKind | null;
+    categoryId: string | null;
+  },
+  copy: ReturnType<typeof useI18n>['transaction'],
+): TransactionErrors {
   const errors: TransactionErrors = {};
   const amount = Number(values.amount);
 
   if (values.type === 'income' && !values.description.trim()) {
-    errors.description = 'Enter a description.';
+    errors.description = copy.descriptionError;
   }
 
   if (values.type === 'expense' && !values.categoryId) {
-    errors.category = 'Select an expense category.';
+    errors.category = copy.categoryError;
   }
 
   if (!values.amount.trim()) {
-    errors.amount = 'Enter an amount.';
+    errors.amount = copy.amountError;
   } else if (!Number.isFinite(amount) || amount <= 0) {
-    errors.amount = 'Enter an amount greater than 0.';
+    errors.amount = copy.amountInvalid;
   }
 
   if (!values.date.trim()) {
-    errors.date = 'Enter a date.';
+    errors.date = copy.dateError;
   } else if (!isRealDate(values.date)) {
-    errors.date = 'Use a real date in YYYY-MM-DD format.';
+    errors.date = copy.dateInvalid;
   }
 
   if (!values.type) {
-    errors.type = 'Select income or expense.';
+    errors.type = copy.typeError;
   }
 
   return errors;
 }
 
 export function TransactionAddScreen() {
+  const copy = useI18n().transaction;
+  const common = useI18n().common;
   const params = useLocalSearchParams<{ id?: string | string[]; type?: string | string[] }>();
   const recordId = firstSearchParam(params.id);
   const requestedType = asKind(firstSearchParam(params.type));
@@ -106,6 +116,8 @@ export function TransactionAddScreen() {
   const [occurredOn, setOccurredOn] = useState(todayIsoDate);
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [categories, setCategories] = useState<ExpenseCategory[]>([]);
+  const [supplierId, setSupplierId] = useState<string | null>(null);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [fieldErrors, setFieldErrors] = useState<TransactionErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [loadingRecord, setLoadingRecord] = useState(isEditing);
@@ -115,18 +127,22 @@ export function TransactionAddScreen() {
   const loadCategories = useCallback(async () => {
     setLoadingCategories(true);
     try {
-      const rows = await listExpenseCategories();
-      setCategories(rows);
+      const [categoryRows, supplierRows] = await Promise.all([
+        listExpenseCategories(),
+        listSuppliers().catch(() => [] as Supplier[]),
+      ]);
+      setCategories(categoryRows);
+      setSuppliers(supplierRows);
     } catch (error) {
       setFormError(
         error instanceof Error
           ? error.message
-          : 'Could not load expense categories. Run the SQL setup script in Supabase.',
+          : copy.categoriesError,
       );
     } finally {
       setLoadingCategories(false);
     }
-  }, []);
+  }, [copy.categoriesError]);
 
   useFocusEffect(
     useCallback(() => {
@@ -156,11 +172,12 @@ export function TransactionAddScreen() {
         );
         setOccurredOn(transaction.occurred_on);
         setCategoryId(transaction.category_id ?? null);
+        setSupplierId(transaction.supplier_id ?? null);
         setFormError(null);
       })
       .catch((error) => {
         if (active) {
-          setFormError(error instanceof Error ? error.message : 'Could not load the record.');
+          setFormError(error instanceof Error ? error.message : copy.loadError);
         }
       })
       .finally(() => {
@@ -180,13 +197,16 @@ export function TransactionAddScreen() {
   }
 
   async function saveTransaction() {
-    const nextErrors = validateTransaction({
-      description,
-      amount,
-      date: occurredOn,
-      type: kind,
-      categoryId,
-    });
+    const nextErrors = validateTransaction(
+      {
+        description,
+        amount,
+        date: occurredOn,
+        type: kind,
+        categoryId,
+      },
+      copy,
+    );
     setFieldErrors(nextErrors);
     setFormError(null);
 
@@ -201,9 +221,10 @@ export function TransactionAddScreen() {
       description:
         description.trim() ||
         selectedCategory?.name ||
-        (kind === 'expense' ? 'Expense' : 'Income'),
+        (kind === 'expense' ? copy.expense : copy.income),
       occurred_on: occurredOn,
       category_id: kind === 'expense' ? categoryId : null,
+      supplier_id: kind === 'expense' ? supplierId : null,
     };
 
     setSaving(true);
@@ -219,8 +240,8 @@ export function TransactionAddScreen() {
         error instanceof Error
           ? error.message
           : isEditing
-            ? 'Could not update the record.'
-            : 'Could not save the record.',
+            ? copy.updateError
+            : copy.saveError,
       );
     } finally {
       setSaving(false);
@@ -229,11 +250,11 @@ export function TransactionAddScreen() {
 
   const title = isEditing
     ? kind === 'expense'
-      ? 'Edit expense'
-      : 'Edit income'
+      ? copy.editExpense
+      : copy.editIncome
     : kind === 'expense'
-      ? 'Add expense'
-      : 'Add income';
+      ? copy.addExpense
+      : copy.addIncome;
 
   const selectAccent = {
     highlightColor: FORM_ACCENT,
@@ -248,12 +269,13 @@ export function TransactionAddScreen() {
       ) : (
         <>
           <SelectField
-            label="Type"
-            placeholder="Choose type"
+            label={copy.type}
+            required
+            placeholder={copy.chooseType}
             value={kind}
             options={[
-              { value: 'income', label: 'Income' },
-              { value: 'expense', label: 'Expense' },
+              { value: 'income', label: copy.income },
+              { value: 'expense', label: copy.expense },
             ]}
             error={fieldErrors.type}
             disabled={saving}
@@ -263,6 +285,7 @@ export function TransactionAddScreen() {
               setKind(nextKind);
               if (nextKind === 'income') {
                 setCategoryId(null);
+                setSupplierId(null);
               }
               clearFieldError('type');
               clearFieldError('category');
@@ -270,13 +293,14 @@ export function TransactionAddScreen() {
           />
           {kind === 'expense' ? (
             <SelectField
-              label="Category"
+              label={common.category}
+              required
               placeholder={
                 loadingCategories
-                  ? 'Loading categories…'
+                  ? copy.loadingCategories
                   : categories.length === 0
-                    ? 'Add a category'
-                    : 'Choose category'
+                    ? copy.addCategory
+                    : copy.chooseCategory
               }
               value={categoryId}
               options={categories.map((category) => ({
@@ -316,46 +340,67 @@ export function TransactionAddScreen() {
               }}
             />
           ) : null}
+          {kind === 'expense' ? (
+            <SelectField
+              label={copy.supplierOptional}
+              placeholder={
+                loadingCategories
+                  ? copy.loadingSuppliers
+                  : suppliers.length === 0
+                    ? copy.noSuppliers
+                    : copy.chooseSupplier
+              }
+              value={supplierId}
+              options={[
+                { value: NO_SUPPLIER, label: copy.noSupplier },
+                ...suppliers.map((supplier) => ({
+                  value: supplier.id,
+                  label: supplier.name,
+                })),
+              ]}
+              disabled={saving || loadingCategories}
+              {...selectAccent}
+              onChange={(value) => setSupplierId(value === NO_SUPPLIER ? null : value)}
+            />
+          ) : null}
           <Field
-            label="Description"
+            label={common.description}
+            required={kind === 'income'}
             value={description}
             error={fieldErrors.description}
             editable={!saving}
-            placeholder={
-              kind === 'expense' ? 'Optional note' : 'Visit fee, medicine sale'
-            }
+            placeholder={kind === 'expense' ? copy.expenseNote : copy.incomeNote}
             onChangeText={(value) => {
               setDescription(value);
               clearFieldError('description');
             }}
           />
-          <Field
-            label="Amount"
+          <AmountField
+            label={common.amount}
+            required
             value={amount}
             error={fieldErrors.amount}
             editable={!saving}
-            keyboardType="decimal-pad"
-            placeholder="0.00"
             onChangeText={(value) => {
-              setAmount(value.replace(/[^\d.]/g, ''));
+              setAmount(value);
               clearFieldError('amount');
             }}
           />
-          <Field
-            label="Date"
+          <DatePickerField
+            label={common.date}
+            required
+            placeholder={common.chooseDate}
             value={occurredOn}
             error={fieldErrors.date}
-            editable={!saving}
-            autoCapitalize="none"
-            placeholder="YYYY-MM-DD"
-            onChangeText={(value) => {
+            disabled={saving}
+            onChange={(value) => {
               setOccurredOn(value);
               clearFieldError('date');
             }}
           />
           {formError ? <ErrorBanner message={formError} /> : null}
           <PrimaryButton
-            label={isEditing ? 'Save' : kind === 'expense' ? 'Add expense' : 'Add income'}
+            label={isEditing ? common.save : kind === 'expense' ? copy.addExpense : copy.addIncome}
             loading={saving}
             onPress={() => {
               void saveTransaction();
